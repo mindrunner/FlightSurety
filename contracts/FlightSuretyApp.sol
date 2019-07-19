@@ -11,12 +11,13 @@ import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 /************************************************** */
 contract FlightSuretyApp {
     using SafeMath for uint256; // Allow SafeMath functions to be called for all uint256 types (similar to "prototype" in Javascript)
+    FlightSuretyData flightSuretyData;
 
     /********************************************************************************************/
     /*                                       DATA VARIABLES                                     */
     /********************************************************************************************/
 
-    // Flight status codees
+    // Flight status codes
     uint8 private constant STATUS_CODE_UNKNOWN = 0;
     uint8 private constant STATUS_CODE_ON_TIME = 10;
     uint8 private constant STATUS_CODE_LATE_AIRLINE = 20;
@@ -24,17 +25,9 @@ contract FlightSuretyApp {
     uint8 private constant STATUS_CODE_LATE_TECHNICAL = 40;
     uint8 private constant STATUS_CODE_LATE_OTHER = 50;
 
+
     address private contractOwner;          // Account used to deploy contract
 
-    struct Flight {
-        bool isRegistered;
-        uint8 statusCode;
-        uint256 updatedTimestamp;        
-        address airline;
-    }
-    mapping(bytes32 => Flight) private flights;
-
- 
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
     /********************************************************************************************/
@@ -50,7 +43,8 @@ contract FlightSuretyApp {
     modifier requireIsOperational() 
     {
          // Modify to call data contract's status
-        require(true, "Contract is currently not operational");  
+        bool dataOperational = flightSuretyData.isOperational();
+        require(dataOperational, "Contract is currently not operational");
         _;  // All modifiers require an "_" which indicates where the function body will be added
     }
 
@@ -60,6 +54,11 @@ contract FlightSuretyApp {
     modifier requireContractOwner()
     {
         require(msg.sender == contractOwner, "Caller is not contract owner");
+        _;
+    }
+
+    modifier isFunded(address wallet) {
+        require(flightSuretyData.isAirlineFunded(wallet), "Airline is not funded");
         _;
     }
 
@@ -73,10 +72,12 @@ contract FlightSuretyApp {
     */
     constructor
                                 (
+                                    address dataContract
                                 ) 
                                 public 
     {
         contractOwner = msg.sender;
+        flightSuretyData = FlightSuretyData(dataContract);
     }
 
     /********************************************************************************************/
@@ -85,10 +86,10 @@ contract FlightSuretyApp {
 
     function isOperational() 
                             public 
-                            pure 
+                            view
                             returns(bool) 
     {
-        return true;  // Modify to call data contract's status
+        return flightSuretyData.isOperational();  // Modify to call data contract's status
     }
 
     /********************************************************************************************/
@@ -101,13 +102,28 @@ contract FlightSuretyApp {
     *
     */   
     function registerAirline
-                            (   
+                            (
+                                string calldata name,
+                                address wallet
                             )
                             external
-                            pure
+                            isFunded(wallet)
                             returns(bool success, uint256 votes)
+
     {
-        return (success, 0);
+        uint256 airlineCount = flightSuretyData.getAirlineCount();
+        if(airlineCount == 0) {
+            flightSuretyData.registerAirline(name, wallet);
+            return(true, 0);
+        } else if(airlineCount < 4) {
+            require(flightSuretyData.isAirlineRegistered(msg.sender), "Caller is not a registered airline");
+            require(flightSuretyData.isAirlineFunded(msg.sender), "Airline is not funded");
+            flightSuretyData.registerAirline(name, wallet);
+            return(true, 1);
+        } else {
+            // implement voting
+            return (false, 0);
+        }
     }
 
 
@@ -117,11 +133,13 @@ contract FlightSuretyApp {
     */  
     function registerFlight
                                 (
+                                    string calldata name,
+                                    uint256 timestamp,
+                                    address airline
                                 )
                                 external
-                                pure
     {
-
+        flightSuretyData.registerFlight(name, timestamp, airline);
     }
     
    /**
@@ -332,6 +350,43 @@ contract FlightSuretyApp {
         return random;
     }
 
+
+    /**
+ * @dev Initial funding for the insurance. Unless there are too many delayed flights
+ *      resulting in insurance payouts, the contract should be self-sustaining
+ *
+ */
+    function fund
+    (
+    )
+    public
+    payable
+    {
+        flightSuretyData.fund();
+    }
+
+    /**
+    * @dev Fallback function for funding smart contract.
+    *
+    */
+    function()
+    external
+    payable
+    {
+        fund();
+    }
 // endregion
 
-}   
+}
+
+contract FlightSuretyData {
+    function setOperatingStatus(bool mode) external;
+    function isOperational() external view returns(bool);
+    function fund() public;
+    function registerFlight(string calldata name, uint256 timestamp, address airline) external;
+    function isFlightRegistered(address airline, string calldata name, uint256 timestamp) external view returns (bool);
+    function isAirlineRegistered(address wallet) external view returns(bool);
+    function isAirlineFunded(address wallet) external view returns(bool);
+    function getAirlineCount() external view returns(uint256);
+    function registerAirline(string calldata name, address wallet) external;
+}
