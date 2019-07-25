@@ -30,7 +30,7 @@ contract FlightSuretyData {
         uint256 updatedTimestamp;
     }
 
-    uint256 private airlineCount = 0;
+    uint private airlineCount = 0;
 
     mapping(bytes32 => Flight) private flights;
     mapping(address => Airline) private airlines;
@@ -174,11 +174,10 @@ contract FlightSuretyData {
             isRegistered: true,
             wallet: wallet
             });
-
-        airlineCount.add(1);
+        airlineCount = airlineCount.add(1);
     }
 
-    function getAirlineCount() external view returns(uint256) {
+    function getAirlineCount() public view returns(uint256) {
         return airlineCount;
     }
 
@@ -247,6 +246,7 @@ contract FlightSuretyData {
                                 external
                                 isCallerAuthorized
     {
+
     }
     
 
@@ -270,13 +270,16 @@ contract FlightSuretyData {
     *      resulting in insurance payouts, the contract should be self-sustaining
     *
     */   
-    function fund
-                            (   
+    function fundForwarded
+                            (
+                                address sender
                             )
-                            public
+                            external
                             payable
+                            isCallerAuthorized
     {
-        funds[msg.sender] = msg.value;
+        require(msg.value > 0, "No funds are not allowed");
+        funds[sender] = msg.value;
     }
 
 
@@ -302,9 +305,8 @@ contract FlightSuretyData {
                             external 
                             payable 
     {
-        fund();
+        require(msg.value > 0, "No funds are not allowed");
+        funds[msg.sender] = msg.value;
     }
-
-
 }
 

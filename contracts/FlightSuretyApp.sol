@@ -27,6 +27,8 @@ contract FlightSuretyApp {
 
 
     address private contractOwner;          // Account used to deploy contract
+    mapping(address => bool) multiCalls;   // Mapping for storing multi-call addresses
+    address[] multiCallKeys = new address[](0);
 
     /********************************************************************************************/
     /*                                       FUNCTION MODIFIERS                                 */
@@ -62,6 +64,14 @@ contract FlightSuretyApp {
         _;
     }
 
+    modifier isAllowedToRegisterAirline() {
+        if(msg.sender != contractOwner) {
+            require(flightSuretyData.isAirlineRegistered(msg.sender), "Caller is not a registered airline");
+            require(flightSuretyData.isAirlineFunded(msg.sender), "Airline is not funded");
+        }
+        _;
+    }
+
     /********************************************************************************************/
     /*                                       CONSTRUCTOR                                        */
     /********************************************************************************************/
@@ -73,7 +83,7 @@ contract FlightSuretyApp {
     constructor
                                 (
                                     address dataContract
-                                ) 
+                                )
                                 public 
     {
         contractOwner = msg.sender;
@@ -107,22 +117,34 @@ contract FlightSuretyApp {
                                 address wallet
                             )
                             external
-                            isFunded(wallet)
+                            isAllowedToRegisterAirline
                             returns(bool success, uint256 votes)
 
     {
-        uint256 airlineCount = flightSuretyData.getAirlineCount();
-        if(airlineCount == 0) {
-            flightSuretyData.registerAirline(name, wallet);
-            return(true, 0);
-        } else if(airlineCount < 4) {
-            require(flightSuretyData.isAirlineRegistered(msg.sender), "Caller is not a registered airline");
-            require(flightSuretyData.isAirlineFunded(msg.sender), "Airline is not funded");
+
+        require(!flightSuretyData.isAirlineRegistered(wallet), "Airline is already registered");
+        uint airlineCount = flightSuretyData.getAirlineCount();
+        uint votes_needed = airlineCount.div(2);
+        if(airlineCount.mod(2) != 0) {
+            votes_needed = votes_needed.add(1);
+        }
+        if(airlineCount < 4) {
             flightSuretyData.registerAirline(name, wallet);
             return(true, 1);
         } else {
-            // implement voting
-            return (false, 0);
+            bool isDuplicate = multiCalls[msg.sender];
+            require(!isDuplicate, "Caller has already called this function");
+            multiCalls[msg.sender] = true;
+            multiCallKeys.push(msg.sender);
+            if(multiCallKeys.length >= votes_needed) {
+                flightSuretyData.registerAirline(name, wallet);
+                for(uint i = 0; i < multiCallKeys.length; ++i) {
+                    multiCalls[multiCallKeys[i]] = false;
+                }
+                multiCallKeys = new address[](0);
+                return (true, votes_needed);
+            }
+            return (false, multiCallKeys.length);
         }
     }
 
@@ -350,21 +372,6 @@ contract FlightSuretyApp {
         return random;
     }
 
-
-    /**
- * @dev Initial funding for the insurance. Unless there are too many delayed flights
- *      resulting in insurance payouts, the contract should be self-sustaining
- *
- */
-    function fund
-    (
-    )
-    public
-    payable
-    {
-        flightSuretyData.fund();
-    }
-
     /**
     * @dev Fallback function for funding smart contract.
     *
@@ -373,7 +380,7 @@ contract FlightSuretyApp {
     external
     payable
     {
-        fund();
+        flightSuretyData.fundForwarded.value(msg.value)(msg.sender);
     }
 // endregion
 
@@ -382,7 +389,7 @@ contract FlightSuretyApp {
 contract FlightSuretyData {
     function setOperatingStatus(bool mode) external;
     function isOperational() external view returns(bool);
-    function fund() public;
+    function fundForwarded(address sender) external payable;
     function registerFlight(string calldata name, uint256 timestamp, address airline) external;
     function isFlightRegistered(address airline, string calldata name, uint256 timestamp) external view returns (bool);
     function isAirlineRegistered(address wallet) external view returns(bool);
