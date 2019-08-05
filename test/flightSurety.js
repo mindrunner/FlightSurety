@@ -161,6 +161,8 @@ contract('Flight Surety Tests', async (accounts) => {
         let airline = accounts[12];
         let funded = await config.flightSuretyData.isAirlineFunded.call(airline);
         assert.equal(funded, true, "Airline should be funded");
+        let reg = await config.flightSuretyData.isFlightRegistered(airline, "Flight 123", 12345, {from: airline});
+        assert.equal(reg, false, "Flight is already registered");
         await config.flightSuretyApp.registerFlight("Flight 123", 12345, airline, {from: airline});
         let pass = await config.flightSuretyData.isFlightRegistered(airline, "Flight 123", 12345, {from: airline});
         assert.equal(pass, true, "Airline should be able to Register a flight");

@@ -100,7 +100,6 @@ contract FlightSuretyData {
     // Define a modifier that checks if the paid amount is sufficient to cover the price
     modifier paidInRange() {
         require(msg.value >= 0, "Nothing was paid for the insurance");
-//        require(msg.value <= MAX_INSURANCE_POLICY, "Paid too much");
         _;
     }
 
@@ -184,7 +183,7 @@ contract FlightSuretyData {
         return airlineCount;
     }
 
-    function getFlights() public view returns (string[] memory, address[] memory, uint256[] memory) {
+    function getFlights() external view returns (string[] memory, address[] memory, uint256[] memory) {
         uint l = flight_keys.length;
         string[] memory names = new string[](l);
         address[] memory airline_addr = new address[](l);
@@ -208,7 +207,14 @@ contract FlightSuretyData {
         return funds[wallet] >= AIRLINE_MIN_FUNDS;
     }
 
+    function isFlightRegistered(address airline, string memory name, uint256 timestamp) public view returns (bool) {
+        bytes32 id = getFlightKey(airline, name, timestamp);
+        return flights[id].isRegistered;
+    }
+
     function registerFlight(string calldata name, uint256 timestamp, address airline) external isCallerAuthorized {
+        bool registered = isFlightRegistered(airline, name, timestamp);
+        require(!registered, "Flight is already registered");
         bytes32 id = getFlightKey(airline, name, timestamp);
         require(!flights[id].isRegistered, "Flight is already registered.");
         Flight memory f = flights[id];
@@ -217,7 +223,7 @@ contract FlightSuretyData {
         f.airline = airline;
         f.statusCode = 0;
         f.updatedTimestamp = timestamp;
-        // flights[id] = Flight({name : name, isRegistered : true, airline : airline, statusCode: 0, updatedTimestamp : timestamp});
+        flights[id] = f;
         flight_keys.push(id);
     }
 
@@ -229,10 +235,7 @@ contract FlightSuretyData {
     }
 
 
-    function isFlightRegistered(address airline, string calldata name, uint256 timestamp) external view returns (bool) {
-        bytes32 id = getFlightKey(airline, name, timestamp);
-        return flights[id].isRegistered;
-    }
+
 
     /**
      * @dev Buy insurance for a flight
@@ -252,7 +255,7 @@ contract FlightSuretyData {
     checkAndRefund(insuree)
     {
         bytes32 id = getFlightKey(airline, flight, timestamp);
-//        require(flights[id].isRegistered = true, "Flight does not exist");
+        require(flights[id].isRegistered = true, "Flight does not exist");
 
         uint insurance_value = 0;
 
@@ -261,7 +264,12 @@ contract FlightSuretyData {
         } else {
             insurance_value = msg.value;
         }
-        insurances[msg.sender] = Insurance({flight : flights[id], customer : insuree, value: insurance_value});
+
+        Insurance storage insurance = insurances[msg.sender];
+        insurance.flight = flights[id];
+        insurance.customer = insuree;
+        insurance.value = insurance_value;
+        insurances[msg.sender] = insurance;
         insurees.push(insuree);
     }
 

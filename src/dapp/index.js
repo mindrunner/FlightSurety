@@ -25,6 +25,8 @@ import './flightsurety.css';
             console.log(JSON.stringify(result));
         });
 
+        DOM.elid('auth-addr').value = contract.getConfig().appAddress;
+
         // User-submitted transaction
         DOM.elid('submit-oracle').addEventListener('click', () => {
             let flight = DOM.elid('text-flight').value;
@@ -41,7 +43,7 @@ import './flightsurety.css';
             let flight = DOM.elid('text-flight').value;
             // Write transaction
             contract.buyInsurance(flight, timestamp, value, (error, result) => {
-                display('Insurance', 'Buy Insurance', [ { label: 'Insurance', error: error, value: result} ]);
+                display('Insurance', 'Buy Insurance', [ { label: 'Insurance', error: error, value: JSON.stringify(result)} ]);
             });
         });
 
@@ -50,14 +52,14 @@ import './flightsurety.css';
             let timestamp = DOM.elid('num-timestamp').value;
             // Write transaction
             contract.registerFlight(name, timestamp, (error, result) => {
-                display('Flight', 'Register Flight', [ { label: 'Flight', error: error, value: result} ]);
+                display('Flight', 'Register Flight', [ { label: 'Flight', error: error, value: JSON.stringify(result)} ]);
             });
-        })
+        });
 
         DOM.elid('auth').addEventListener('click', () => {
             let address = DOM.elid('auth-addr').value;
             contract.authorizeContract(address, (error, result) => {
-                display('Auth', 'AuthorizeContract', [ { label: 'Auth', error: error, value: result} ]);
+                display('Auth', 'AuthorizeContract', [ { label: 'Auth', error: error, value: JSON.stringify(result)} ]);
             });
         })
 

@@ -6,10 +6,10 @@ import Web3 from 'web3';
 export default class Contract {
     constructor(network, callback) {
 
-        let config = Config[network];
-        this.web3 = new Web3(new Web3.providers.HttpProvider(config.url));
-        this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
-        this.flightSuretyData = new this.web3.eth.Contract(FlightSuretyData.abi, config.dataAddress);
+        this.config = Config[network];
+        this.web3 = new Web3(new Web3.providers.HttpProvider(this.config.url));
+        this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, this.config.appAddress);
+        this.flightSuretyData = new this.web3.eth.Contract(FlightSuretyData.abi, this.config.dataAddress);
         this.initialize(callback);
         this.owner = null;
         this.airlines = [];
@@ -33,6 +33,10 @@ export default class Contract {
 
             callback();
         });
+    }
+
+    getConfig() {
+        return this.config;
     }
 
     isOperational(callback) {
