@@ -154,6 +154,19 @@ contract('Flight Surety Tests', async (accounts) => {
 
     });
 
+    it("Register Flight", async () => {
+        //see previous tests
+        // let unfunded_airline = accounts[2];
+        // let new_airline = accounts[97];
+        let airline = accounts[12];
+        let funded = await config.flightSuretyData.isAirlineFunded.call(airline);
+        assert.equal(funded, true, "Airline should be funded");
+        await config.flightSuretyApp.registerFlight("Flight 123", 12345, airline, {from: airline});
+        let pass = await config.flightSuretyData.isFlightRegistered(airline, "Flight 123", 12345, {from: airline});
+        assert.equal(pass, true, "Airline should be able to Register a flight");
+
+    });
+
     it("Passengers may pay up to 1 ether for purchasing flight insurance.", async () => {
     });
 

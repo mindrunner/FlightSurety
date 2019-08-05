@@ -174,8 +174,10 @@ contract FlightSuretyApp {
         uint8 statusCode
     )
     internal
-    pure
     {
+        if (statusCode == 20) {
+            flightSuretyData.creditInsurees(airline, flight, timestamp);
+        }
     }
 
 
@@ -303,6 +305,9 @@ contract FlightSuretyApp {
         }
     }
 
+    function buyInsurance(address airline, string calldata flight, uint256 timestamp) external payable {
+        flightSuretyData.buy.value(msg.value)(airline, flight, timestamp, msg.sender);
+    }
 
     function getFlightKey
     (
@@ -395,4 +400,8 @@ contract FlightSuretyData {
     function getAirlineCount() external view returns (uint256);
 
     function registerAirline(string calldata name, address wallet) external;
+
+    function buy(address airline, string calldata flight, uint256 timestamp, address insuree) external payable;
+
+    function creditInsurees(address airline, string calldata flight, uint256 timestamp) external;
 }

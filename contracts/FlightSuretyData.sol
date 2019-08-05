@@ -1,5 +1,5 @@
 pragma solidity ^0.5.8;
-
+pragma experimental ABIEncoderV2;
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
 contract FlightSuretyData {
@@ -20,21 +20,25 @@ contract FlightSuretyData {
 
     struct Insurance {
         Flight flight;
+        uint256 value;
         address customer;
     }
 
     struct Flight {
         string name;
         bool isRegistered;
-        uint8 statusCode;
+        address airline;
+        uint statusCode;
         uint256 updatedTimestamp;
     }
 
     uint private airlineCount = 0;
 
     mapping(bytes32 => Flight) private flights;
+    bytes32[] private flight_keys = new bytes32[](0);
     mapping(address => Airline) private airlines;
     mapping(address => Insurance) private insurances;
+    address[] private insurees = new address[](0);
     mapping(address => uint256) private payouts;
     mapping(address => uint256) private funds;
     mapping(address => uint256) private authorizedContracts;
@@ -42,7 +46,8 @@ contract FlightSuretyData {
     uint256 private constant MAX_INSURANCE_POLICY = 1 ether;
     uint256 private constant AIRLINE_MIN_FUNDS = 10 ether;
 
-    /********************************************************************************************/
+    event InsureeCredited(address insuree, uint credit, uint total);
+/********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
 
@@ -95,16 +100,17 @@ contract FlightSuretyData {
     // Define a modifier that checks if the paid amount is sufficient to cover the price
     modifier paidInRange() {
         require(msg.value >= 0, "Nothing was paid for the insurance");
-        require(msg.value <= MAX_INSURANCE_POLICY, "Paid too much");
+//        require(msg.value <= MAX_INSURANCE_POLICY, "Paid too much");
         _;
     }
 
     // Define a modifier that checks the price and refunds the remaining balance
-    modifier checkAndRefund() {
+    modifier checkAndRefund(address insuree) {
         _;
         if (msg.value > MAX_INSURANCE_POLICY) {
             uint amountToReturn = msg.value - MAX_INSURANCE_POLICY;
-            msg.sender.transfer(amountToReturn);
+            payouts[insuree] += amountToReturn;
+            emit InsureeCredited(insuree, amountToReturn, payouts[insuree]);
         }
     }
 
@@ -178,6 +184,22 @@ contract FlightSuretyData {
         return airlineCount;
     }
 
+    function getFlights() public view returns (string[] memory, address[] memory, uint256[] memory) {
+        uint l = flight_keys.length;
+        string[] memory names = new string[](l);
+        address[] memory airline_addr = new address[](l);
+        uint256[] memory timestamps = new uint256[](l);
+
+        for(uint i = 0; i < l; ++i) {
+            bytes32 key = flight_keys[i];
+            names[i] = flights[key].name;
+            airline_addr[i] = flights[key].airline;
+            timestamps[i] = flights[key].updatedTimestamp;
+        }
+
+        return (names, airline_addr, timestamps);
+    }
+
     function isAirlineRegistered(address wallet) external view returns (bool) {
         return airlines[wallet].isRegistered;
     }
@@ -189,7 +211,14 @@ contract FlightSuretyData {
     function registerFlight(string calldata name, uint256 timestamp, address airline) external isCallerAuthorized {
         bytes32 id = getFlightKey(airline, name, timestamp);
         require(!flights[id].isRegistered, "Flight is already registered.");
-        flights[id] = Flight({name : name, isRegistered : true, statusCode : 0, updatedTimestamp : timestamp});
+        Flight memory f = flights[id];
+        f.name = name;
+        f.isRegistered = true;
+        f.airline = airline;
+        f.statusCode = 0;
+        f.updatedTimestamp = timestamp;
+        // flights[id] = Flight({name : name, isRegistered : true, airline : airline, statusCode: 0, updatedTimestamp : timestamp});
+        flight_keys.push(id);
     }
 
     function updateFlight(string calldata name, uint256 timestamp, address airline, uint8 statusCode)
@@ -213,30 +242,50 @@ contract FlightSuretyData {
     (
         address airline,
         string calldata flight,
-        uint256 timestamp
+        uint256 timestamp,
+        address insuree
     )
     external
     payable
     isCallerAuthorized
     paidInRange
-    checkAndRefund
+    checkAndRefund(insuree)
     {
         bytes32 id = getFlightKey(airline, flight, timestamp);
-        require(flights[id].isRegistered = true, "Flight does not exist");
+//        require(flights[id].isRegistered = true, "Flight does not exist");
 
-        insurances[msg.sender] = Insurance({flight : flights[id], customer : msg.sender});
+        uint insurance_value = 0;
+
+        if (msg.value >= MAX_INSURANCE_POLICY) {
+            insurance_value = MAX_INSURANCE_POLICY;
+        } else {
+            insurance_value = msg.value;
+        }
+        insurances[msg.sender] = Insurance({flight : flights[id], customer : insuree, value: insurance_value});
+        insurees.push(insuree);
     }
 
     /**
      *  @dev Credits payouts to insurees
     */
-    function creditInsurees
-    (
-    )
+    function creditInsurees(address airline, string calldata flight, uint256 timestamp)
     external
-    isCallerAuthorized
     {
-
+        bytes32 id = getFlightKey(airline, flight, timestamp);
+        for(uint i = 0; i < insurees.length; ++i) {
+            address insuree = insurees[i];
+            Insurance memory insurance = insurances[insuree];
+            Flight memory f = insurance.flight;
+            bytes32 id2 = getFlightKey(f.airline, f.name, f.updatedTimestamp);
+            if(id == id2) {
+                uint value = insurance.value;
+                insurance.value = 0;
+                insurances[insuree] = insurance;
+                uint refund = value.add(value.div(2));
+                payouts[insuree] += refund;
+                emit InsureeCredited(insuree, refund, payouts[insuree]);
+            }
+        }
     }
 
 
@@ -269,7 +318,7 @@ contract FlightSuretyData {
     isCallerAuthorized
     {
         require(msg.value > 0, "No funds are not allowed");
-        funds[sender] = msg.value;
+        funds[sender] = funds[sender].add(msg.value);
     }
 
 
@@ -295,7 +344,7 @@ contract FlightSuretyData {
     payable
     {
         require(msg.value > 0, "No funds are not allowed");
-        funds[msg.sender] = msg.value;
+        funds[msg.sender] = funds[msg.sender].add(msg.value);
     }
 }
 
