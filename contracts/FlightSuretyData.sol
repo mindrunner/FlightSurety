@@ -1,5 +1,6 @@
 pragma solidity ^0.5.8;
 pragma experimental ABIEncoderV2;
+
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
 contract FlightSuretyData {
@@ -29,7 +30,7 @@ contract FlightSuretyData {
         bool isRegistered;
         address airline;
         uint statusCode;
-        uint256 updatedTimestamp;
+        uint256 timestamp;
     }
 
     uint private airlineCount = 0;
@@ -37,17 +38,19 @@ contract FlightSuretyData {
     mapping(bytes32 => Flight) private flights;
     bytes32[] private flight_keys = new bytes32[](0);
     mapping(address => Airline) private airlines;
-    mapping(address => Insurance) private insurances;
+    mapping(uint => Insurance) private insurances;
     address[] private insurees = new address[](0);
     mapping(address => uint256) private payouts;
     mapping(address => uint256) private funds;
     mapping(address => uint256) private authorizedContracts;
 
-    uint256 private constant MAX_INSURANCE_POLICY = 1 ether;
-    uint256 private constant AIRLINE_MIN_FUNDS = 10 ether;
+    uint256 public constant MAX_INSURANCE_POLICY = 1 ether;
+    uint256 public constant AIRLINE_MIN_FUNDS = 10 ether;
+
+    uint private next_insurance = 0;
 
     event InsureeCredited(address insuree, uint credit, uint total);
-/********************************************************************************************/
+    /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
 
@@ -107,8 +110,8 @@ contract FlightSuretyData {
     modifier checkAndRefund(address insuree) {
         _;
         if (msg.value > MAX_INSURANCE_POLICY) {
-            uint amountToReturn = msg.value - MAX_INSURANCE_POLICY;
-            payouts[insuree] += amountToReturn;
+            uint amountToReturn = msg.value.sub(MAX_INSURANCE_POLICY);
+            payouts[insuree] = payouts[insuree].add(amountToReturn);
             emit InsureeCredited(insuree, amountToReturn, payouts[insuree]);
         }
     }
@@ -174,7 +177,6 @@ contract FlightSuretyData {
     isCallerAuthorized
     {
         require(!airlines[wallet].isRegistered, "Airline is already registered.");
-
         airlines[wallet] = Airline({name : name, isRegistered : true, wallet : wallet});
         airlineCount = airlineCount.add(1);
     }
@@ -189,11 +191,11 @@ contract FlightSuretyData {
         address[] memory airline_addr = new address[](l);
         uint256[] memory timestamps = new uint256[](l);
 
-        for(uint i = 0; i < l; ++i) {
+        for (uint i = 0; i < l; ++i) {
             bytes32 key = flight_keys[i];
             names[i] = flights[key].name;
             airline_addr[i] = flights[key].airline;
-            timestamps[i] = flights[key].updatedTimestamp;
+            timestamps[i] = flights[key].timestamp;
         }
 
         return (names, airline_addr, timestamps);
@@ -207,23 +209,21 @@ contract FlightSuretyData {
         return funds[wallet] >= AIRLINE_MIN_FUNDS;
     }
 
-    function isFlightRegistered(address airline, string memory name, uint256 timestamp) public view returns (bool) {
+    function isFlightRegistered(string memory name, uint256 timestamp, address airline) public view returns (bool) {
         bytes32 id = getFlightKey(airline, name, timestamp);
         return flights[id].isRegistered;
     }
 
     function registerFlight(string calldata name, uint256 timestamp, address airline) external isCallerAuthorized {
-        bool registered = isFlightRegistered(airline, name, timestamp);
+        bool registered = isFlightRegistered(name, timestamp, airline);
         require(!registered, "Flight is already registered");
         bytes32 id = getFlightKey(airline, name, timestamp);
         require(!flights[id].isRegistered, "Flight is already registered.");
-        Flight memory f = flights[id];
-        f.name = name;
-        f.isRegistered = true;
-        f.airline = airline;
-        f.statusCode = 0;
-        f.updatedTimestamp = timestamp;
-        flights[id] = f;
+        flights[id].name = name;
+        flights[id].isRegistered = true;
+        flights[id].airline = airline;
+        flights[id].statusCode = 0;
+        flights[id].timestamp = timestamp;
         flight_keys.push(id);
     }
 
@@ -265,13 +265,17 @@ contract FlightSuretyData {
             insurance_value = msg.value;
         }
 
-        Insurance storage insurance = insurances[msg.sender];
+        Insurance storage insurance = insurances[next_insurance];
         insurance.flight = flights[id];
         insurance.customer = insuree;
         insurance.value = insurance_value;
-        insurances[msg.sender] = insurance;
+        next_insurance = next_insurance.add(1);
         insurees.push(insuree);
     }
+
+
+    event debug(uint i, address insuree, bytes32 id, address airline, string flight, uint256 ftimestamp, uint256 value);
+
 
     /**
      *  @dev Credits payouts to insurees
@@ -280,22 +284,26 @@ contract FlightSuretyData {
     external
     {
         bytes32 id = getFlightKey(airline, flight, timestamp);
-        for(uint i = 0; i < insurees.length; ++i) {
-            address insuree = insurees[i];
-            Insurance memory insurance = insurances[insuree];
-            Flight memory f = insurance.flight;
-            bytes32 id2 = getFlightKey(f.airline, f.name, f.updatedTimestamp);
-            if(id == id2) {
-                uint value = insurance.value;
-                insurance.value = 0;
-                insurances[insuree] = insurance;
-                uint refund = value.add(value.div(2));
-                payouts[insuree] += refund;
+        for (uint i = 0; i < insurees.length; ++i) {
+            address insuree = insurances[i].customer;
+            bytes32 id2 = getFlightKey(insurances[i].flight.airline, insurances[i].flight.name, insurances[i].flight.timestamp);
+            emit debug(i, insurances[i].customer, id, airline, flight, timestamp, 0);
+            emit debug(i, insurances[i].customer, id2, insurances[i].flight.airline, insurances[i].flight.name, insurances[i].flight.timestamp, insurances[i].value);
+            if(insurances[i].value == 0) continue;
+            if (id == id2) {
+                uint256 value = insurances[i].value;
+                uint256 half = value.div(2);
+                insurances[i].value = 0;
+                uint256 refund = value.add(half);
+                payouts[insuree] = payouts[insuree].add(refund);
                 emit InsureeCredited(insuree, refund, payouts[insuree]);
             }
         }
     }
 
+    function checkFunds() external view returns (uint){
+        return payouts[msg.sender];
+    }
 
     /**
      *  @dev Transfers eligible payout funds to insuree
@@ -303,13 +311,14 @@ contract FlightSuretyData {
     */
     function pay
     (
+        address payable insuree
     )
     external
     isCallerAuthorized
     {
-        uint refund = payouts[msg.sender];
-        payouts[msg.sender] = 0;
-        msg.sender.transfer(refund);
+        uint refund = payouts[insuree];
+        payouts[insuree] = 0;
+        insuree.transfer(refund);
     }
 
     /**

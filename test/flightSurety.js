@@ -1,6 +1,12 @@
 const Test = require('../config/testConfig.js');
-const BigNumber = require('bignumber.js');
-const INITIAL_FUND = web3.utils.toWei('10', "ether");
+const truffleAssert = require('truffle-assertions');
+const BN = require('bn.js');
+
+
+// let INITIAL_FUND = web3.utils.toWei('10', "ether");
+// let MAX_INSURANCE_POLICY = web3.utils.toWei('1', "ether");
+let INITIAL_FUND = 0;
+let MAX_INSURANCE_POLICY = 0;
 
 contract('Flight Surety Tests', async (accounts) => {
 
@@ -8,6 +14,8 @@ contract('Flight Surety Tests', async (accounts) => {
     before('setup contract', async () => {
         config = await Test.Config(accounts);
         await config.flightSuretyData.authorizeCaller(config.flightSuretyApp.address);
+        INITIAL_FUND = await config.flightSuretyData.AIRLINE_MIN_FUNDS.call();
+        MAX_INSURANCE_POLICY = await config.flightSuretyData.MAX_INSURANCE_POLICY.call();
         await config.flightSuretyApp.sendTransaction({from: config.firstAirline, value: INITIAL_FUND});
         await config.flightSuretyApp.registerAirline('Root Air', config.firstAirline, {from: config.owner});
     });
@@ -117,7 +125,7 @@ contract('Flight Surety Tests', async (accounts) => {
 
         for (let i = 0; i < max_airlines; ++i) {
             await config.flightSuretyApp.sendTransaction({from: accounts[i + account_offset], value: INITIAL_FUND});
-            let count = BigNumber(await config.flightSuretyData.getAirlineCount.call());
+            let count = new BN(await config.flightSuretyData.getAirlineCount.call());
             // console.log("registered airlines: ", count);
             let votes_needed = Math.ceil(count / 2);
             for (let k = 0; k < votes_needed; ++k) {
@@ -158,31 +166,147 @@ contract('Flight Surety Tests', async (accounts) => {
         //see previous tests
         // let unfunded_airline = accounts[2];
         // let new_airline = accounts[97];
-        let airline = accounts[12];
-        let funded = await config.flightSuretyData.isAirlineFunded.call(airline);
-        assert.equal(funded, true, "Airline should be funded");
-        let reg = await config.flightSuretyData.isFlightRegistered(airline, "Flight 123", 12345, {from: airline});
-        assert.equal(reg, false, "Flight is already registered");
-        await config.flightSuretyApp.registerFlight("Flight 123", 12345, airline, {from: airline});
-        let pass = await config.flightSuretyData.isFlightRegistered(airline, "Flight 123", 12345, {from: airline});
-        assert.equal(pass, true, "Airline should be able to Register a flight");
+
+        for (let i = 0; i< 10; ++i) {
+            let airline = accounts[i];
+            let name = "Flight " + i;
+            let timestamp = 12345678;
+            await config.flightSuretyApp.sendTransaction({from: airline, value: INITIAL_FUND});
+            let funded = await config.flightSuretyData.isAirlineFunded.call(airline);
+            assert.equal(funded, true, "Airline should be funded");
+            let reg = await config.flightSuretyData.isFlightRegistered(name, timestamp, airline, {from: airline});
+            assert.equal(reg, false, "Flight is already registered");
+            await config.flightSuretyApp.registerFlight(name, timestamp, airline, {from: airline});
+            let pass = await config.flightSuretyData.isFlightRegistered(name, timestamp, airline, {from: airline});
+            assert.equal(pass, true, "Airline should be able to Register a flight");
+        }
+
 
     });
 
     it("Passengers may pay up to 1 ether for purchasing flight insurance.", async () => {
-    });
+            let airline = accounts[12];
+            let customer = accounts[99];
+            let timestamp = 12345678;
+            let insurance_values = [
+                new BN(web3.utils.toWei('2', "ether")),
+                new BN(web3.utils.toWei('0.1', "ether")),
+                new BN(web3.utils.toWei('1', "ether")),
+                new BN(web3.utils.toWei('20', "ether")),
+                new BN(web3.utils.toWei('0.0001', "ether")),
+                new BN(web3.utils.toWei('0.0000000000001', "ether")),
+                new BN(web3.utils.toWei('1', "wei")),
+            ];
+
+            for (var i = 0, len = insurance_values.length; i < len; i++) {
+                let name = "Flight " + i;
+                let insurance_value = insurance_values[i];
+                let overpaid_amount = new BN('0');
+                if (insurance_value.gt(MAX_INSURANCE_POLICY)) {
+                    overpaid_amount = insurance_value.sub(MAX_INSURANCE_POLICY);
+                }
+                let tx = await config.flightSuretyApp.buyInsurance(accounts[i], name, timestamp, {
+                    from: customer,
+                    value: insurance_value
+                });
+                // https://github.com/rkalis/truffle-assertions/issues/6
+                let newTx = await truffleAssert.createTransactionResult(config.flightSuretyData, tx.tx);
+
+                if (overpaid_amount > 0) {
+                    truffleAssert.eventEmitted(newTx, 'InsureeCredited', null, 'InsureeCredited should be emitted at all');
+                    truffleAssert.eventEmitted(newTx, 'InsureeCredited', (ev) => {
+                        return ev.insuree === customer && ev.credit.eq(overpaid_amount);
+                    }, 'InsureeCredit emited wrong parameters');
+                } else {
+                    truffleAssert.eventNotEmitted(newTx, 'InsureeCredited', null, 'Insuree should not gain any credit');
+                }
+            }
+        }
+    );
 
     it("If flight is delayed due to airline fault, passenger receives credit of 1.5X the amount they paid", async () => {
+        let airline = accounts[7];
+        let customer = accounts[55];
+        let name = "Flight " + 7;
+        let timestamp = 12345678;
+        let min_responses = await config.flightSuretyApp.MIN_RESPONSES.call();
+        let insurance_value = new BN(web3.utils.toWei('10', "ether"));
+        let expected_payout;
+        if(insurance_value.gt(MAX_INSURANCE_POLICY)) {
+            expected_payout = MAX_INSURANCE_POLICY.add(MAX_INSURANCE_POLICY.div(new BN(2)));
+        } else {
+            expected_payout = insurance_value.add(insurance_value.div(new BN(2)));
+        }
+
+        let tx = await config.flightSuretyApp.buyInsurance(airline, name, timestamp, {
+            from: customer,
+            value: insurance_value
+        });
+
+        let TEST_ORACLES_COUNT = 30;
+
+        // ARRANGE
+        let fee = await config.flightSuretyApp.REGISTRATION_FEE.call();
+
+        // ACT
+        for (let a = 1; a < TEST_ORACLES_COUNT; a++) {
+            await config.flightSuretyApp.registerOracle({from: accounts[a], value: fee});
+            let result = await config.flightSuretyApp.getMyIndexes.call({from: accounts[a]});
+            // console.log(`Oracle Registered: ${result[0]}, ${result[1]}, ${result[2]}`);
+        }
+
+        tx = await config.flightSuretyApp.fetchFlightStatus(airline, name, timestamp);
+        truffleAssert.eventEmitted(tx, 'OracleRequest', {airline: airline, flight: name});
+
+        let success_responses = 0;
+
+        for (let a = 1; a < TEST_ORACLES_COUNT; a++) {
+
+            // Get oracle information
+            let oracleIndexes = await config.flightSuretyApp.getMyIndexes.call({from: accounts[a]});
+            for (let idx = 0; idx < 3; idx++) {
+                let tx;
+                try {
+                    // Submit a response...it will only be accepted if there is an Index match
+                    tx = await config.flightSuretyApp.submitOracleResponse(oracleIndexes[idx], airline, name, timestamp, 20, {from: accounts[a]});
+                } catch (e) {
+                    continue;
+                    // Enable this when debugging
+                    // console.log('\nError', idx, oracleIndexes[idx].toNumber(), flight, timestamp);
+                }
+
+                let tx_data = await truffleAssert.createTransactionResult(config.flightSuretyData, tx.tx);
+                truffleAssert.eventEmitted(tx, 'OracleReport');
+                success_responses += 1;
+                console.log(success_responses);
+                if (success_responses >= 3) {
+                    truffleAssert.eventEmitted(tx, 'FlightStatusInfo');
+                    // truffleAssert.eventEmitted(tx_data, 'debug');
+                    truffleAssert.eventEmitted(tx_data, 'InsureeCredited', null, 'InsureeCredited was not emitted');
+                    truffleAssert.eventEmitted(tx_data, 'InsureeCredited', (ev) => {
+                        console.log(web3.utils.fromWei(ev.credit.toString(), 'ether'));
+                        console.log(web3.utils.fromWei(expected_payout.toString(), 'ether'));
+                        return ev.insuree === customer && ev.credit.eq(expected_payout);
+                    }, 'InsureeCredit emited wrong parameters');
+                    return;
+                }
+
+            }
+        }
+        assert.equal(false, true, 'Should never reach this');
     });
 
     it("Passenger can withdraw any funds owed to them as a result of receiving credit for insurance payout", async () => {
+        let customer = accounts[55];
+        let balance = web3.utils.fromWei(await web3.eth.getBalance(customer), 'ether');
+        console.log("Balance is %d", balance);
+        let funds = await config.flightSuretyData.checkFunds.call({from: customer});
+        let tx = await config.flightSuretyApp.getFunds({from: customer});
+        let new_balance = web3.utils.fromWei(await web3.eth.getBalance(customer), 'ether');
+        console.log("New Balance is %d", new_balance);
+        console.log("Withdrew %d", new_balance - balance);
+        assert.equal(balance < new_balance, true, 'New balance should be bigger');
+
+
     });
-
-    it("Upon startup, 20+ oracles are registered and their assigned indexes are persisted in memory", async () => {
-    });
-
-    it("Server will loop through all registered oracles, identify those oracles for which the OracleRequest event applies, and respond by calling into FlightSuretyApp contract with random status code of Unknown (0), On Time (10) or Late Airline (20), Late Weather (30), Late Technical (40), or Late Other (50)", async () => {
-
-    });
-
 });

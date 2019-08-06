@@ -146,6 +146,9 @@ contract FlightSuretyApp {
         }
     }
 
+    function getFunds() external {
+        flightSuretyData.pay(msg.sender);
+    }
 
     /**
      * @dev Register a future flight for insuring.
@@ -209,7 +212,7 @@ contract FlightSuretyApp {
     uint256 public constant REGISTRATION_FEE = 1 ether;
 
     // Number of oracles that must respond for valid status
-    uint256 private constant MIN_RESPONSES = 3;
+    uint256 public constant MIN_RESPONSES = 3;
 
 
     struct Oracle {
@@ -306,6 +309,7 @@ contract FlightSuretyApp {
     }
 
     function buyInsurance(address airline, string calldata flight, uint256 timestamp) external payable {
+        require(msg.value > 0, 'Cannot buy insurance without funds');
         flightSuretyData.buy.value(msg.value)(airline, flight, timestamp, msg.sender);
     }
 
@@ -391,7 +395,7 @@ contract FlightSuretyData {
 
     function registerFlight(string calldata name, uint256 timestamp, address airline) external;
 
-    function isFlightRegistered(address airline, string calldata name, uint256 timestamp) external view returns (bool);
+    function isFlightRegistered(string calldata name, uint256 timestamp, address airline) external view returns (bool);
 
     function isAirlineRegistered(address wallet) external view returns (bool);
 
@@ -402,6 +406,8 @@ contract FlightSuretyData {
     function registerAirline(string calldata name, address wallet) external;
 
     function buy(address airline, string calldata flight, uint256 timestamp, address insuree) external payable;
+
+    function pay(address payable insuree) external;
 
     function creditInsurees(address airline, string calldata flight, uint256 timestamp) external;
 }
