@@ -15,6 +15,8 @@ export default class DOM {
     static p = (...args) => DOM.makeElement(`p`, ...args);
     static span = (...args) => DOM.makeElement(`span`, ...args);
     static img = (...args) => DOM.makeElement(`img`, ...args);
+    static select = (...args) => DOM.makeElement(`select`, ...args);
+    static option = (...args) => DOM.makeElement(`option`, ...args);
     static td = (...args) => DOM.makeElement(`td`, ...args);
     static attributeExceptions = [
       `role`,

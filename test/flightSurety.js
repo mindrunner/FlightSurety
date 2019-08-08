@@ -205,7 +205,7 @@ contract('Flight Surety Tests', async (accounts) => {
                 if (insurance_value.gt(MAX_INSURANCE_POLICY)) {
                     overpaid_amount = insurance_value.sub(MAX_INSURANCE_POLICY);
                 }
-                let tx = await config.flightSuretyApp.buyInsurance(accounts[i], name, timestamp, {
+                let tx = await config.flightSuretyApp.buyInsurance(name, timestamp, accounts[i], {
                     from: customer,
                     value: insurance_value
                 });
@@ -238,7 +238,7 @@ contract('Flight Surety Tests', async (accounts) => {
             expected_payout = insurance_value.add(insurance_value.div(new BN(2)));
         }
 
-        let tx = await config.flightSuretyApp.buyInsurance(airline, name, timestamp, {
+        let tx = await config.flightSuretyApp.buyInsurance( name, timestamp, airline, {
             from: customer,
             value: insurance_value
         });
@@ -306,7 +306,5 @@ contract('Flight Surety Tests', async (accounts) => {
         console.log("New Balance is %d", new_balance);
         console.log("Withdrew %d", new_balance - balance);
         assert.equal(balance < new_balance, true, 'New balance should be bigger');
-
-
     });
 });

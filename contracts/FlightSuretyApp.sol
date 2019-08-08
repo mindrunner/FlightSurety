@@ -179,7 +179,7 @@ contract FlightSuretyApp {
     internal
     {
         if (statusCode == 20) {
-            flightSuretyData.creditInsurees(airline, flight, timestamp);
+            flightSuretyData.creditInsurees(flight, timestamp, airline);
         }
     }
 
@@ -308,9 +308,9 @@ contract FlightSuretyApp {
         }
     }
 
-    function buyInsurance(address airline, string calldata flight, uint256 timestamp) external payable {
+    function buyInsurance( string calldata flight, uint256 timestamp, address airline) external payable {
         require(msg.value > 0, 'Cannot buy insurance without funds');
-        flightSuretyData.buy.value(msg.value)(airline, flight, timestamp, msg.sender);
+        flightSuretyData.buy.value(msg.value)(flight, timestamp, airline, msg.sender);
     }
 
     function getFlightKey
@@ -405,9 +405,9 @@ contract FlightSuretyData {
 
     function registerAirline(string calldata name, address wallet) external;
 
-    function buy(address airline, string calldata flight, uint256 timestamp, address insuree) external payable;
+    function buy(string calldata flight, uint256 timestamp, address airline, address insuree) external payable;
 
     function pay(address payable insuree) external;
 
-    function creditInsurees(address airline, string calldata flight, uint256 timestamp) external;
+    function creditInsurees(string calldata flight, uint256 timestamp, address airline) external;
 }

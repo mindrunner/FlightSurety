@@ -4,20 +4,24 @@ import Config from './config.json';
 import Web3 from 'web3';
 
 export default class Contract {
-    constructor(network, callback) {
-
+    constructor(network) {
         this.config = Config[network];
-        this.web3 = new Web3(new Web3.providers.HttpProvider(this.config.url));
-        this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, this.config.appAddress);
+        this.web3 = new Web3(new Web3.providers.WebsocketProvider(this.config.url.replace('http', 'ws')));
+        // this.web3 = new Web3(new Web3.providers.HttpProvider(this.config.url));
+        this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, this.config.appAddress, {
+            gas: 4712388,
+            gasPrice: 100000000000
+        });
         this.flightSuretyData = new this.web3.eth.Contract(FlightSuretyData.abi, this.config.dataAddress, 2);
-        this.initialize(callback);
-        this.owner = null;
         this.airlines = [];
         this.passengers = [];
+        // this.owner = '0x627306090abaB3A6e1400e9345bC60c78a8BEf57';
+        this.owner = null;
     }
 
-    initialize(callback) {
-        this.web3.eth.getAccounts((error, accts) => {
+    async initialize() {
+        console.log("initializing");
+        await this.web3.eth.getAccounts(async (error, accts) => {
 
             this.owner = accts[0];
 
@@ -31,7 +35,43 @@ export default class Contract {
                 this.passengers.push(accts[counter++]);
             }
 
-            callback();
+            // await this.flightSuretyData.events.allEvents({
+            //     fromBlock: 0
+            // }, function (error, event) {
+            //     if (error) console.log(error);
+            //     console.log(event);
+            // });
+            //
+            // await this.flightSuretyApp.events.allEvents({
+            //     fromBlock: 0
+            // }, function (error, event) {
+            //     if (error) console.log(error);
+            //     console.log(event);
+            // });
+
+            await this.flightSuretyApp.events.allEvents({ fromBlock: 'latest' })
+                .on('data', console.log)
+                .on('changed', console.log)
+                .on('error', console.log);
+
+            await this.flightSuretyData.events.allEvents({ fromBlock: 'latest' })
+                .on('data', console.log)
+                .on('changed', console.log)
+                .on('error', console.log);
+
+            // this.flightSuretyApp.events.OracleRequest({
+            //     fromBlock: 0
+            // }, (error, event) => {
+            //     if (error) console.log(error);
+            //     console.log(event);
+            // });
+            //
+            // this.flightSuretyData.events.InsureeCredited({
+            //     fromBlock: 0
+            // }, async (error, event) => {
+            //     if (error) console.log(error);
+            //     console.log("%s Credit for %s, new value %d", event.returnValues.credit, event.returnValues.insuree, event.returnValues.total);
+            // });
         });
     }
 
@@ -39,71 +79,63 @@ export default class Contract {
         return this.config;
     }
 
-    isOperational(callback) {
+    async isOperational() {
         let self = this;
-        self.flightSuretyApp.methods
+        return await self.flightSuretyApp.methods
             .isOperational()
-            .call({from: self.owner}, callback);
+            .call({from: self.owner, gas: 4712388, gasPrice: 100000000000});
     }
 
-    getFlights(callback) {
+    async getFlights() {
         let self = this;
-        self.flightSuretyData.methods
+        return await self.flightSuretyData.methods
             .getFlights()
-            .call({from: self.owner},callback);
+            .call({from: self.owner});
     }
 
-    fetchFlightStatus(flight, timestamp, callback) {
+    async fetchFlightStatus(flight, timestamp) {
         let self = this;
         let payload = {
             airline: self.airlines[0],
             flight: flight,
             timestamp: timestamp
         };
-        self.flightSuretyApp.methods
+        return await self.flightSuretyApp.methods
             .fetchFlightStatus(payload.airline, payload.flight, payload.timestamp)
-            .call({from: self.owner}, (error, result) => {
-                callback(error, payload);
-            });
+            .call({from: self.owner});
     }
 
-    buyInsurance(flight, timestamp, value, callback) {
+    async buyInsurance(flight, timestamp, value) {
         let self = this;
         let payload = {
             airline: self.airlines[0],
             flight: flight,
             timestamp: timestamp
         };
-        self.flightSuretyApp.methods
-            .buyInsurance(payload.airline, payload.flight, payload.timestamp)
-            .send({from: self.owner, value: value}, (error, result) => {
-                callback(error, payload);
-            });
+        return await self.flightSuretyApp.methods
+            .buyInsurance(payload.flight, payload.timestamp, payload.airline)
+            .send({from: self.owner, value: value, gas: 4712388, gasPrice: 100000000000});
     }
 
-    registerFlight(flight, timestamp, callback) {
+    async registerFlight(flight, timestamp) {
         let self = this;
         let payload = {
             airline: self.airlines[0],
             name: flight,
             timestamp: timestamp
         };
-        self.flightSuretyApp.methods
+        return await self.flightSuretyApp.methods
             .registerFlight(payload.name, payload.timestamp, payload.airline)
-            .send({from: self.owner}, (error, result) => {
-                callback(error, payload);
-            });
+            .send({from: self.owner, gas: 4712388, gasPrice: 100000000000});
     }
 
-    authorizeContract(address, callback) {
+    async authorizeContract(address) {
         let self = this;
         let payload = {
             address: address
         };
-        self.flightSuretyData.methods
+        return await self.flightSuretyData.methods
             .authorizeCaller(payload.address)
-            .send({from: self.owner}, (error, result) => {
-                callback(error, payload);
-            });
+            .send({from: self.owner});
     }
 }

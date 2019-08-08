@@ -34,6 +34,7 @@ contract FlightSuretyData {
     }
 
     uint private airlineCount = 0;
+    uint private next_insurance = 0;
 
     mapping(bytes32 => Flight) private flights;
     bytes32[] private flight_keys = new bytes32[](0);
@@ -47,12 +48,10 @@ contract FlightSuretyData {
     uint256 public constant MAX_INSURANCE_POLICY = 1 ether;
     uint256 public constant AIRLINE_MIN_FUNDS = 10 ether;
 
-    uint private next_insurance = 0;
-
-    event InsureeCredited(address insuree, uint credit, uint total);
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
     /********************************************************************************************/
+    event InsureeCredited(address insuree, uint credit, uint total);
 
 
     /**
@@ -243,9 +242,9 @@ contract FlightSuretyData {
      */
     function buy
     (
-        address airline,
         string calldata flight,
         uint256 timestamp,
+        address airline,
         address insuree
     )
     external
@@ -255,7 +254,7 @@ contract FlightSuretyData {
     checkAndRefund(insuree)
     {
         bytes32 id = getFlightKey(airline, flight, timestamp);
-        require(flights[id].isRegistered = true, "Flight does not exist");
+        require(flights[id].isRegistered, "Flight does not exist");
 
         uint insurance_value = 0;
 
@@ -265,10 +264,9 @@ contract FlightSuretyData {
             insurance_value = msg.value;
         }
 
-        Insurance storage insurance = insurances[next_insurance];
-        insurance.flight = flights[id];
-        insurance.customer = insuree;
-        insurance.value = insurance_value;
+        insurances[next_insurance].flight = flights[id];
+        insurances[next_insurance].customer = insuree;
+        insurances[next_insurance].value = insurance_value;
         next_insurance = next_insurance.add(1);
         insurees.push(insuree);
     }
@@ -280,7 +278,7 @@ contract FlightSuretyData {
     /**
      *  @dev Credits payouts to insurees
     */
-    function creditInsurees(address airline, string calldata flight, uint256 timestamp)
+    function creditInsurees(string calldata flight, uint256 timestamp, address airline)
     external
     {
         bytes32 id = getFlightKey(airline, flight, timestamp);
